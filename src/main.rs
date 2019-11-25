@@ -7,14 +7,55 @@ use winapi::shared::minwindef::FALSE;
 use winapi::shared::ntdef::NULL;
 use winapi::shared::minwindef::DWORD;
 
-const EXECUTABLES: [&str; 2] = ["League of Legends.exe", "firefox.exe"];
+use reqwest;
+
+const EXECUTABLES: [&str; 1] = ["League of Legends.exe"];
+const SECOND_INTERVAL : u64 = 60;
 
 fn main() {
     println!("Hello, world!");
     unsafe{get_process_list();}
 
-    // dbg!{(-1 as i8).to_string()};
+    let monitor = Monitor::new();
+    monitor.start();
+
 }
+
+struct Monitor {
+    client: reqwest::Client    
+}
+impl Monitor {
+    fn new() -> Self {
+        Monitor {client: reqwest::Client::new()}
+    }
+
+    fn start(&self) -> ! {
+        let dur = std::time::Duration::from_secs(SECOND_INTERVAL);
+        loop {
+            dbg!{"starting loop"};
+            let start = std::time::Instant::now();
+            
+            let send_stop = unsafe {get_process_list()};
+
+            match send_stop {
+                true => {
+                    let send = self.client.post("http://192.168.86.139:9932/pause_torrent").send();
+                    match send {
+                        Ok(_) => println!{"sent request to server to pause torrents"},
+                        Err(e) => println!{"error sending request to pause torrents: \n\n{:?}", e}
+                    }
+                }
+                false => ()
+            }
+
+
+            let new_time = dur - start.elapsed();
+            std::thread::sleep(new_time);
+        }
+
+    }
+}
+
 
 unsafe fn get_process_list() -> bool {
     let h_process_snap = tlhelp32::CreateToolhelp32Snapshot(tlhelp32::TH32CS_SNAPPROCESS, 0);
@@ -26,7 +67,6 @@ unsafe fn get_process_list() -> bool {
 
     dbg!{first_process};
     if first_process != 1 {
-        println!{"the first process failed"}
         // supposed to CloseHandle here but the function
         // does not exist
     }
@@ -52,10 +92,12 @@ unsafe fn get_process_list() -> bool {
         if process_class == 0 {
             // println!{"zero process class"}
         }
-        list_process_modules(pe32.th32ProcessID);
+        match list_process_modules(pe32.th32ProcessID) {
+            true => return true,
+            false => ()
+        }
         
     }
-
     true
 }
 
